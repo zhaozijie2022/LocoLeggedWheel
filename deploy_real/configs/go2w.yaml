@@ -1,0 +1,41 @@
+# 
+control_dt: 0.02
+
+msg_type: "go"     # "hg" or "go"
+imu_type: "pelvis"    # "torso" or "pelvis"
+  
+lowcmd_topic: "rt/lowcmd"
+lowstate_topic: "rt/lowstate"
+
+policy_path: "../pre_train/model_xxxxxx.pt"
+
+joint2motor_idx: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+
+kps: [50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 0, 0, 0, 0]
+kds: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]
+
+default_real_angles: [0.0, 0.8, -1.5, 0.0, 0.8, -1.5, 0.0, 0.8, -1.5, 0.0, 0.8, -1.5, 0.0, 0.0, 0.0, 0.0]
+default_sim_angles: [ 0.0 ,0.0 ,0.0, 0.0, 0.8,  0.8,  0.8, 0.8, -1.5, -1.5, -1.5, -1.5,  0.0,  0.0, 0.0, 0.0]
+
+num_actions: 16
+num_obs: 57
+
+actor_hidden_dims: [512, 256, 128]
+history_length: 6
+
+# obs_scale
+velocity_commands_scale: [1.0, 0.0, 0.0]
+base_ang_vel_scale: 0.25
+projected_gravity_scale: 1.0 
+joint_pos_scale: 1.0
+joint_vel_scale: 0.05
+last_action_scale: 1.0
+
+# action_scale
+action_scale: 0.25
+wheel_action_scale: 5.0
+
+# action_filter
+fc_leg: 5
+fc_wheel: 15
+fs: 50
