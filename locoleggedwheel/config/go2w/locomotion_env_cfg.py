@@ -255,7 +255,7 @@ class ActionsCfg:
     wheel_joint_vel = mdp.JointVelocityLowPassActionCfg(
         asset_name="robot",
         joint_names=WHEEL_JOINT_NAMES,
-        scale=10.0,
+        scale=5.0,
         use_default_offset=True,
         clip={".*": (-100.0, 100.0)},
         control_frequency=50.0,

@@ -24,7 +24,7 @@ actor_hidden_dims: [512, 256, 128]
 history_length: 6
 
 # obs_scale
-velocity_commands_scale: [1.0, 0.0, 0.0]
+velocity_commands_scale: [1.0, 0.5, 0.523]  # 0.523 is pi/6
 base_ang_vel_scale: 0.25
 projected_gravity_scale: 1.0 
 joint_pos_scale: 1.0
