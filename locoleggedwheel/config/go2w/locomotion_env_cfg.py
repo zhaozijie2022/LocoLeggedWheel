@@ -146,15 +146,13 @@ class CommandsCfg:
         asset_name="robot",
         resampling_time_range=(10.0, 10.0),
         rel_standing_envs=0.1,
-        final_rel_standing_envs=0.1,
         initial_zero_command_steps=50,
-        final_initial_zero_command_steps=50,
         rel_heading_envs=0.0,
         heading_command=False,
         ranges=mdp.UniformVelocityCommandMultiSamplingCfg.Ranges(
             lin_vel_x=(-1.0, 1.0),
             lin_vel_y=(-0.5, 0.5),
-            ang_vel_z=(-math.pi / 6, math.pi / 6),
+            ang_vel_z=(-math.pi / 4, math.pi / 4),
         ),
     )
 
@@ -569,18 +567,38 @@ class LocomotionEnvCfg(ManagerBasedRLEnvCfg):
 
 
         # ---------- Curriculum ----------
-        self.curriculum.command_xy_levels = CurriculumTermCfg(
-            func=mdp.command_xy_levels_vel,
-            params={"reward_term_name": "track_lin_vel_xy_exp", "range_multiplier": (0.1, 1.0)},
+        self.curriculum.command_x_levels = CurriculumTermCfg(
+            func=mdp.command_axis_levels_vel,
+            params={
+                "reward_term_name": "track_lin_vel_x_exp", 
+                "range_multiplier": (0.1, 1.0),
+                "upper_threshold": 0.8,
+                "lower_threshold": 0.5,
+                "ema_alpha": 0.5,
+            },
+        )
+        self.curriculum.command_y_levels = CurriculumTermCfg(
+            func=mdp.command_axis_levels_vel,
+            params={
+                "reward_term_name": "track_lin_vel_y_exp", 
+                "range_multiplier": (0.1, 1.0),
+                "upper_threshold": 0.8,
+                "lower_threshold": 0.5,
+                "ema_alpha": 0.5,
+            },
         )
         self.curriculum.command_z_levels = CurriculumTermCfg(
-            func=mdp.command_z_levels_vel,
-            params={"reward_term_name": "track_ang_vel_z_exp", "range_multiplier": (0.1, 1.0)},
+            func=mdp.command_axis_levels_vel,
+            params={
+                "reward_term_name": "track_ang_vel_z_exp", 
+                "range_multiplier": (0.1, 1.0),
+                "upper_threshold": 0.8,
+                "lower_threshold": 0.5,
+                "ema_alpha": 0.5,
+            },
         )
         if self.scene.terrain.terrain_type == "generator":
             self.curriculum.terrain_levels = CurriculumTermCfg(func=mdp.terrain_levels_vel)
-            self.curriculum.command_xy_levels = None
-            self.curriculum.command_z_levels = None
 
         if getattr(self.curriculum, "terrain_levels", None) is not None:
             if getattr(self.scene.terrain, "terrain_generator", None) is not None:
@@ -608,19 +626,12 @@ class LocomotionPlayEnvCfg(LocomotionEnvCfg):
         self.scene.robot = Robot_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         _smaller_scene_for_playing(self)
 
-        if self.scene.terrain.terrain_type != "generator":
-            play_command_maximum_ranges = [
-                self.commands.base_velocity.ranges.lin_vel_x[1],
-                self.commands.base_velocity.ranges.lin_vel_y[1],
-                self.commands.base_velocity.ranges.ang_vel_z[1],
-            ]
-            self.commands.base_velocity.ranges.lin_vel_x = (-play_command_maximum_ranges[0], play_command_maximum_ranges[0])
-            self.commands.base_velocity.ranges.lin_vel_y = (-play_command_maximum_ranges[1], play_command_maximum_ranges[1])
-            self.commands.base_velocity.ranges.ang_vel_z = (-play_command_maximum_ranges[2], play_command_maximum_ranges[2])
-            self.commands.base_velocity.initial_zero_command_steps = self.commands.base_velocity.final_initial_zero_command_steps
-            self.commands.base_velocity.rel_standing_envs = self.commands.base_velocity.final_rel_standing_envs
-            if getattr(self, "curriculum", None) is not None:
-                if getattr(self.curriculum, "command_xy_levels", None) is not None:
-                    self.curriculum.command_xy_levels.params["range_multiplier"] = (1.0, 1.0)
-                if getattr(self.curriculum, "command_z_levels", None) is not None:
-                    self.curriculum.command_z_levels.params["range_multiplier"] = (1.0, 1.0)
+        self.commands.base_velocity.bang_bang_envs = 0.5
+
+        if getattr(self, "curriculum", None) is not None:
+            if getattr(self.curriculum, "command_x_levels", None) is not None:
+                self.curriculum.command_x_levels.params["range_multiplier"] = (1.0, 1.0)
+            if getattr(self.curriculum, "command_y_levels", None) is not None:
+                self.curriculum.command_y_levels.params["range_multiplier"] = (1.0, 1.0)
+            if getattr(self.curriculum, "command_z_levels", None) is not None:
+                self.curriculum.command_z_levels.params["range_multiplier"] = (1.0, 1.0)

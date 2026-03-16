@@ -48,157 +48,79 @@ def terrain_levels_vel(
     return torch.mean(terrain.terrain_levels.float())
 
 
-def command_xy_levels_vel(
+def command_axis_levels_vel(
     env: ManagerBasedRLEnv,
     env_ids: Sequence[int],
-    reward_term_name: str,
-    range_multiplier: Sequence[float] = (0.1, 1.0),
+    reward_term_name: str,  # track_lin_vel_x_exp
+    range_multiplier: Sequence[float] = (0.1, 1.0),  # 课程起点和终点
     delta: float = 0.1,
-    threshold: float = 0.8,
-) -> None:
-    """command_levels_vel"""
-    base_velocity_ranges = env.command_manager.get_term("base_velocity").cfg.ranges
-    # Get original velocity ranges (ONLY ON FIRST EPISODE)
-    if env.common_step_counter == 0:
-        env._original_vel_x = torch.tensor(base_velocity_ranges.lin_vel_x, device=env.device)
-        env._original_vel_y = torch.tensor(base_velocity_ranges.lin_vel_y, device=env.device)
-        env._initial_vel_x = env._original_vel_x * range_multiplier[0]
-        env._final_vel_x = env._original_vel_x * range_multiplier[1]
-        env._initial_vel_y = env._original_vel_y * range_multiplier[0]
-        env._final_vel_y = env._original_vel_y * range_multiplier[1]
-
-        # Initialize command ranges to initial values
-        base_velocity_ranges.lin_vel_x = env._initial_vel_x.tolist()
-        base_velocity_ranges.lin_vel_y = env._initial_vel_y.tolist()
-
-    # avoid updating command curriculum at each step since the maximum command is common to all envs
-    if env.common_step_counter % env.max_episode_length == 0:
-        episode_sums = env.reward_manager._episode_sums[reward_term_name]
-        reward_term_cfg = env.reward_manager.get_term_cfg(reward_term_name)
-        delta_command = torch.tensor([-delta, delta], device=env.device)
-
-        # If the tracking reward is above 80% of the maximum, increase the range of commands
-        if torch.mean(episode_sums[env_ids]) / env.max_episode_length_s > threshold * reward_term_cfg.weight:
-            new_vel_x = torch.tensor(base_velocity_ranges.lin_vel_x, device=env.device) + delta_command
-            new_vel_y = torch.tensor(base_velocity_ranges.lin_vel_y, device=env.device) + delta_command
-
-            # Clamp to ensure we don't exceed final ranges
-            new_vel_x = torch.clamp(new_vel_x, min=env._final_vel_x[0], max=env._final_vel_x[1])
-            new_vel_y = torch.clamp(new_vel_y, min=env._final_vel_y[0], max=env._final_vel_y[1])
-
-            # Update ranges
-            base_velocity_ranges.lin_vel_x = new_vel_x.tolist()
-            base_velocity_ranges.lin_vel_y = new_vel_y.tolist()
-
-    return torch.tensor(base_velocity_ranges.lin_vel_x[1], device=env.device)
-
-
-def command_x_levels_vel(
-    env: ManagerBasedRLEnv,
-    env_ids: Sequence[int],
-    reward_term_name: str,
-    range_multiplier: Sequence[float] = (0.1, 1.0),
-    delta: float = 0.1,
-    threshold: float = 0.8,
+    upper_threshold: float = 0.8,
+    lower_threshold: float = 0.5,
+    ema_alpha: float = 0.5,
 ) -> torch.Tensor:
-    base_velocity_ranges = env.command_manager.get_term("base_velocity").cfg.ranges
-    # Get original velocity ranges (ONLY ON FIRST EPISODE)
+    """根据跟踪奖励调整 x 速度命令范围; 每个 env 维护自己的 tracking_reward running average，课程用全 env 均值与 threshold 比较。"""
+    base_velocity = env.command_manager.get_term("base_velocity")
+    axis_name = reward_term_name.split("_")[-2]
+    ema_name = f"_tracking_{axis_name}_ema"
+    cmd_level_name = f"_command_{axis_name}_level"
+
     if env.common_step_counter == 0:
-        env._original_vel_x = torch.tensor(base_velocity_ranges.lin_vel_x, device=env.device)
-        env._initial_vel_x = env._original_vel_x * range_multiplier[0]
-        env._final_vel_x = env._original_vel_x * range_multiplier[1]
+        # env._original_vel_x = torch.tensor(base_velocity_ranges.lin_vel_x, device=env.device)
+        # env._initial_vel_x = env._original_vel_x * range_multiplier[0]
+        # env._final_vel_x = env._original_vel_x * range_multiplier[1]
+        # base_velocity_ranges.lin_vel_x = env._initial_vel_x.tolist()
 
-        # Initialize command ranges to initial values
-        base_velocity_ranges.lin_vel_x = env._initial_vel_x.tolist()
+        # 记录一个num_envs大小的 ema, 对应每个 env 的速度追踪情况
+        setattr(base_velocity, ema_name, torch.zeros(env.num_envs, device=env.device, dtype=torch.float32))
+        # 尝试分开每个环境的cmd等级, 初始均为 range_multiplier[0]
+        setattr(base_velocity, cmd_level_name, torch.ones(env.num_envs, device=env.device, dtype=torch.float32) * range_multiplier[0])
+        # 记录每个env的previous cmd等级, 用于cmd采样
+        setattr(base_velocity, f"_previous_{cmd_level_name}", torch.ones(env.num_envs, device=env.device, dtype=torch.float32) * range_multiplier[0])
 
-    # avoid updating command curriculum at each step since the maximum command is common to all envs
-    if env.common_step_counter % env.max_episode_length == 0:
+    ema = getattr(base_velocity, ema_name)
+    cmd_level = getattr(base_velocity, cmd_level_name)
+    previous_cmd_level = getattr(base_velocity, f"_previous_{cmd_level_name}")
+
+    # ema_mean = ema.mean().item()
+    cmd_level_mean = cmd_level.mean().item()
+
+    if len(env_ids) > 0:
         episode_sums = env.reward_manager._episode_sums[reward_term_name]
         reward_term_cfg = env.reward_manager.get_term_cfg(reward_term_name)
-        delta_command = torch.tensor([-delta, delta], device=env.device)
+        # 刚结束的 episode 的实际时长 (秒)
+        # actual_length_s = (env.episode_length_buf[env_ids].float() * env.step_dt).clamp(min=env.step_dt)
+        # per_env_reward = (episode_sums[env_ids] / actual_length_s).float()
 
-        # If the tracking reward is above 80% of the maximum, increase the range of commands
-        if torch.mean(episode_sums[env_ids]) / env.max_episode_length_s > threshold * reward_term_cfg.weight:
-            new_vel_x = torch.tensor(base_velocity_ranges.lin_vel_x, device=env.device) + delta_command
+        # 根据episode最长时间计算, 摔倒活该
+        per_env_reward = (episode_sums[env_ids] / env.cfg.episode_length_s).float()
 
-            # Clamp to ensure we don't exceed final ranges
-            new_vel_x = torch.clamp(new_vel_x, min=env._final_vel_x[0], max=env._final_vel_x[1])
+        # 更新每个env的ema
+        ema[env_ids] = (1.0 - ema_alpha) * ema[env_ids] + ema_alpha * per_env_reward
+        previous_cmd_level[env_ids] = cmd_level[env_ids]
 
-            # Update ranges
-            base_velocity_ranges.lin_vel_x = new_vel_x.tolist()
+        # cmd_level move up or down
+        cmd_level[env_ids] = torch.where(
+            ema[env_ids] > (upper_threshold * reward_term_cfg.weight), 
+            torch.clamp(cmd_level[env_ids] + delta, min=range_multiplier[0], max=range_multiplier[1]),
+            cmd_level[env_ids]
+        )
+        cmd_level[env_ids] = torch.where(
+            ema[env_ids] < (lower_threshold * reward_term_cfg.weight), 
+            torch.clamp(cmd_level[env_ids] - delta, min=range_multiplier[0], max=range_multiplier[1]),
+            cmd_level[env_ids]
+        )
 
-    return torch.tensor(base_velocity_ranges.lin_vel_x[1], device=env.device)
+        # global_mean = ema.mean().item()
 
-
-def command_y_levels_vel(
-    env: ManagerBasedRLEnv,
-    env_ids: Sequence[int],
-    reward_term_name: str,
-    range_multiplier: Sequence[float] = (0.1, 1.0),
-    delta: float = 0.1,
-    threshold: float = 0.8,
-) -> torch.Tensor:
-    base_velocity_ranges = env.command_manager.get_term("base_velocity").cfg.ranges
-    # Get original velocity ranges (ONLY ON FIRST EPISODE)
-    if env.common_step_counter == 0:
-        env._original_vel_y = torch.tensor(base_velocity_ranges.lin_vel_y, device=env.device)
-        env._initial_vel_y = env._original_vel_y * range_multiplier[0]
-        env._final_vel_y = env._original_vel_y * range_multiplier[1]
-
-        # Initialize command ranges to initial values
-        base_velocity_ranges.lin_vel_y = env._initial_vel_y.tolist()
-
-    # avoid updating command curriculum at each step since the maximum command is common to all envs
-    if env.common_step_counter % env.max_episode_length == 0:
-        episode_sums = env.reward_manager._episode_sums[reward_term_name]
-        reward_term_cfg = env.reward_manager.get_term_cfg(reward_term_name)
-        delta_command = torch.tensor([-delta, delta], device=env.device)
-
-        # If the tracking reward is above 80% of the maximum, increase the range of commands
-        if torch.mean(episode_sums[env_ids]) / env.max_episode_length_s > threshold * reward_term_cfg.weight:
-            new_vel_y = torch.tensor(base_velocity_ranges.lin_vel_y, device=env.device) + delta_command
-
-            # Clamp to ensure we don't exceed final ranges
-            new_vel_y = torch.clamp(new_vel_y, min=env._final_vel_y[0], max=env._final_vel_y[1])
-
-            # Update ranges
-            base_velocity_ranges.lin_vel_y = new_vel_y.tolist()
-
-    return torch.tensor(base_velocity_ranges.lin_vel_y[1], device=env.device)
-
-
-def command_z_levels_vel(
-    env: ManagerBasedRLEnv,
-    env_ids: Sequence[int],
-    reward_term_name: str,
-    range_multiplier: Sequence[float] = (0.1, 1.0),
-    delta: float = 0.1,
-    threshold: float = 0.8,
-) -> torch.Tensor:
-    base_velocity_ranges = env.command_manager.get_term("base_velocity").cfg.ranges
-
-    # Get original velocity ranges (ONLY ON FIRST EPISODE)
-    if env.common_step_counter == 0:
-        env._original_ang_z = torch.tensor(base_velocity_ranges.ang_vel_z, device=env.device)
-        env._initial_ang_z = env._original_ang_z * range_multiplier[0]
-        env._final_ang_z = env._original_ang_z * range_multiplier[1]
-
-        base_velocity_ranges.ang_vel_z = env._initial_ang_z.tolist()
-
-    # avoid updating command curriculum at each step since the maximum command is common to all envs
-    if env.common_step_counter % env.max_episode_length == 0:
-        episode_sums = env.reward_manager._episode_sums[reward_term_name]
-        reward_term_cfg = env.reward_manager.get_term_cfg(reward_term_name)
-
-        delta_command = torch.tensor([-delta, delta], device=env.device)
-
-        mean_rew = torch.mean(episode_sums[env_ids]) / env.max_episode_length_s
-        if mean_rew > threshold * reward_term_cfg.weight:
-            new_ang_z = torch.tensor(base_velocity_ranges.ang_vel_z, device=env.device) + delta_command
-
-            new_ang_z = torch.clamp(new_ang_z, min=env._final_ang_z[0], max=env._final_ang_z[1])
-
-            # Update ranges
-            base_velocity_ranges.ang_vel_z = new_ang_z.tolist()
-
-    return torch.tensor(base_velocity_ranges.ang_vel_z[1], device=env.device)
+        # if global_mean > upper_threshold * reward_term_cfg.weight:
+        #     delta_command = torch.tensor([-delta, delta], device=env.device)
+        #     new_vel_x = torch.tensor(base_velocity_ranges.lin_vel_x, device=env.device) + delta_command
+        #     new_vel_x = torch.clamp(new_vel_x, min=env._final_vel_x[0], max=env._final_vel_x[1])
+        #     base_velocity_ranges.lin_vel_x = new_vel_x.tolist()
+        # elif global_mean < lower_threshold * reward_term_cfg.weight:
+        #     delta_command = torch.tensor([delta, -delta], device=env.device)
+        #     new_vel_x = torch.tensor(base_velocity_ranges.lin_vel_x, device=env.device) + delta_command
+        #     new_vel_x = torch.clamp(new_vel_x, min=env._final_vel_x[0], max=env._final_vel_x[1])
+        #     base_velocity_ranges.lin_vel_x = new_vel_x.tolist()
+    
+    return torch.tensor(cmd_level_mean, device=env.device)
