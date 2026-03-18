@@ -222,6 +222,7 @@ class ObservationsCfg:
             params={"sensor_cfg": SceneEntityCfg("height_scanner")},
             clip=(-1.0, 1.0),
             scale=1.0,
+            offset=0.4, 
         )
 
         def __post_init__(self):
@@ -314,6 +315,7 @@ class RewardsCfg:
             "asset_cfg": SceneEntityCfg("robot", body_names=[BASE_LINK_NAME]),
             "sensor_cfg": SceneEntityCfg("height_scanner_base"),
             "target_height": 0.40,
+            "terrain_height_threshold": (-0.5, 0.5),
         },
     )
     undesired_contacts = RewardTermCfg(
