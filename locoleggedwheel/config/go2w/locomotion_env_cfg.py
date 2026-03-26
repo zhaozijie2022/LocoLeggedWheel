@@ -219,10 +219,12 @@ class ObservationsCfg:
         )
         height_scan = ObservationTermCfg(
             func=mdp.custom_height_scan,
-            params={"sensor_cfg": SceneEntityCfg("height_scanner")},
+            params={
+                "sensor_cfg": SceneEntityCfg("height_scanner"),
+                "offset": 0.4,
+            },
             clip=(-1.0, 1.0),
             scale=1.0,
-            offset=0.4, 
         )
 
         def __post_init__(self):
