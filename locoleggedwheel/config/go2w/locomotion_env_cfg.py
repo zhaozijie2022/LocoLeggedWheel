@@ -100,7 +100,7 @@ class SceneCfg(InteractiveSceneCfg):
         debug_vis=False,
     )
     robot: ArticulationCfg = Robot_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
-    robot_contact_senosr = ContactSensorCfg(
+    robot_contact_sensor = ContactSensorCfg(
         prim_path="{ENV_REGEX_NS}/Robot/(?!sensor.*).*",
         history_length=3,
         track_air_time=True,
@@ -491,11 +491,11 @@ class TerminationsCfg:
     # )
     base_contact = TerminationTermCfg(
         func=mdp.illegal_contact,
-        params={"sensor_cfg": SceneEntityCfg("robot_contact_senosr", body_names=[BASE_LINK_NAME]), "threshold": 1.0},
+        params={"sensor_cfg": SceneEntityCfg("robot_contact_sensor", body_names=[BASE_LINK_NAME]), "threshold": 1.0},
     )
     hip_contact = TerminationTermCfg(
         func=mdp.illegal_contact,
-        params={"sensor_cfg": SceneEntityCfg("robot_contact_senosr", body_names=".*hip"), "threshold": 1.0},
+        params={"sensor_cfg": SceneEntityCfg("robot_contact_sensor", body_names=".*hip"), "threshold": 1.0},
     )
     terrain_out_of_bounds = TerminationTermCfg(
         func=mdp.terrain_out_of_bounds,
@@ -564,8 +564,8 @@ class LocomotionEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.physics_material.restitution_combine_mode = "multiply"
 
         # 传感器 update_period 依赖 self.sim.dt, 在运行时设置
-        if getattr(self.scene, "robot_contact_senosr", None) is not None:
-            self.scene.robot_contact_senosr.update_period = self.sim.dt
+        if getattr(self.scene, "robot_contact_sensor", None) is not None:
+            self.scene.robot_contact_sensor.update_period = self.sim.dt
         if getattr(self.scene, "contact_forces", None) is not None:
             self.scene.contact_forces.update_period = self.sim.dt
 
