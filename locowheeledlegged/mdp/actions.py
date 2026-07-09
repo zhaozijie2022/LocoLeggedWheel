@@ -15,62 +15,49 @@ from isaaclab.envs.mdp.actions import JointVelocityAction
 
 # region Low Pass Actions
 
-def _compute_lowpass_weights(
-    control_frequency: float,
-    cut_off_frequency: float,
-    order: int,
-) -> list[float]:
-    """根据控制频率和截止频率计算低通滤波权重（对模型原始输出做 FIR 平滑）。
-    - alpha = 1.0 - exp(-2π*f_c/f_s)  
-    - order=1: at = alpha*at + (1-alpha)*at-1
-    - order=2: at = alpha²*at + 2*alpha*(1-alpha)*at-1 + (1-alpha)²*at-2
-    50Hz 控制 / 5Hz 截止时：一阶 [0.47, 0.53]，二阶 [0.2209, 0.4982, 0.2809]
+def _compute_lowpass_alpha(
+        control_frequency: float,
+        cut_off_frequency: float,
+    ) -> float:
+    """一阶低通(EMA/IIR)系数: alpha = 1 - exp(-2π f_c / f_s)。
+    alpha 越大截止频率越高、平滑越弱; 50Hz 控制 / 5Hz 截止 → alpha ≈ 0.4665。
+    order=2 时对同一 alpha 做两级级联
     """
-    alpha = 1.0 - math.exp(-2.0 * math.pi * cut_off_frequency / control_frequency)
-    if order == 1: 
-        return [alpha, 1.0 - alpha]
-    return [alpha * alpha, 2.0 * alpha * (1.0 - alpha), (1.0 - alpha) ** 2]
+    return 1.0 - math.exp(-2.0 * math.pi * cut_off_frequency / control_frequency)
 
 
 class JointPositionLowPassAction(JointPositionAction):
-    """可配置阶数的低通滤波,仅对模型原始输出做平滑, at-1/at-2 均为模型输出非滤波结果
+    """对模型输出做一阶/二阶低通(IIR/EMA)平滑, 再交给父类做 scale/offset 等 process。
 
-    order=1: at = w0*at + w1*at-1
-    order=2: at = w0*at + w1*at-1 + w2*at-2
-    权重由 control_frequency 与 cut_off_frequency 计算 50Hz/5Hz 时一阶 0.47/0.53, 二阶 0.2209/0.4982/0.2809
+    order=1: y[t] = alpha*x[t] + (1-alpha)*y[t-1]
+    order=2: 两级级联的一阶 EMA,
+    历史项为**滤波后**输出 y[t-1](而非模型原始输出)
+    alpha 由 control_frequency 与 cut_off_frequency 计算, 50Hz/5Hz 时 alpha≈0.4665
     """
 
     def __init__(self, cfg: JointPositionLowPassActionCfg, env: ManagerBasedEnv):
         super().__init__(cfg, env)
         self._order = cfg.order
-        self._weights = _compute_lowpass_weights(
-            cfg.control_frequency,
-            cfg.cut_off_frequency,
-            cfg.order,
-        )
-        # 历史为模型原始输出（非滤波后）
-        self._prev_model_output = torch.zeros_like(self._raw_actions)
-        self._prev_prev_model_output = torch.zeros_like(self._raw_actions) if cfg.order >= 2 else None
+        self._alpha = _compute_lowpass_alpha(cfg.control_frequency, cfg.cut_off_frequency)
+        # IIR 状态: 上一时刻各级滤波输出 y[t-1]
+        self._filtered_1 = torch.zeros_like(self._raw_actions)
+        self._filtered_2 = torch.zeros_like(self._raw_actions) if cfg.order >= 2 else None
 
     def process_actions(self, actions: torch.Tensor):
-        if self._order == 1:
-            filtered = self._weights[0] * actions + self._weights[1] * self._prev_model_output
-        else:
-            filtered = (
-                self._weights[0] * actions
-                + self._weights[1] * self._prev_model_output
-                + self._weights[2] * self._prev_prev_model_output
-            )
-        # 更新历史：at-2 <- at-1, at-1 <- 当前模型输出
+        a = self._alpha
+        # 一级 EMA: y = a*x[t] + (1-a)*y[t-1]
+        y = a * actions + (1.0 - a) * self._filtered_1
+        self._filtered_1[:] = y
         if self._order >= 2:
-            self._prev_prev_model_output[:] = self._prev_model_output.clone()
-        self._prev_model_output[:] = actions.clone()
-        super().process_actions(filtered)
+            # 二级级联, 输入为一级输出
+            y = a * y + (1.0 - a) * self._filtered_2
+            self._filtered_2[:] = y
+        super().process_actions(y)
 
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
-        self._prev_model_output[env_ids] = 0.0
-        if self._prev_prev_model_output is not None:
-            self._prev_prev_model_output[env_ids] = 0.0
+        self._filtered_1[env_ids] = 0.0
+        if self._filtered_2 is not None:
+            self._filtered_2[env_ids] = 0.0
         super().reset(env_ids)
 
 
@@ -88,41 +75,32 @@ class JointPositionLowPassActionCfg(JointPositionActionCfg):
 # region Velocity Low Pass
 
 class JointVelocityLowPassAction(JointVelocityAction):
-    """轮子速度控制的一阶/二阶低通滤波，与 JointPositionLowPassAction 逻辑一致。
+    """轮子速度控制的一阶/二阶低通(IIR/EMA)滤波，与 JointPositionLowPassAction 逻辑一致。
 
-    对模型输出的速度 action 先做 FIR 低通（at-1/at-2 为模型上一时刻/上上时刻输出），
+    对模型输出的速度 action 做 EMA 低通(历史项为滤波后输出 y[t-1])，
     再将滤波结果交给父类做 scale/offset 等 process。
     """
 
     def __init__(self, cfg: JointVelocityLowPassActionCfg, env: ManagerBasedEnv):
         super().__init__(cfg, env)
         self._order = cfg.order
-        self._weights = _compute_lowpass_weights(
-            cfg.control_frequency,
-            cfg.cut_off_frequency,
-            cfg.order,
-        )
-        self._prev_model_output = torch.zeros_like(self._raw_actions)
-        self._prev_prev_model_output = torch.zeros_like(self._raw_actions) if cfg.order >= 2 else None
+        self._alpha = _compute_lowpass_alpha(cfg.control_frequency, cfg.cut_off_frequency)
+        self._filtered_1 = torch.zeros_like(self._raw_actions)
+        self._filtered_2 = torch.zeros_like(self._raw_actions) if cfg.order >= 2 else None
 
     def process_actions(self, actions: torch.Tensor):
-        if self._order == 1:
-            filtered = self._weights[0] * actions + self._weights[1] * self._prev_model_output
-        else:
-            filtered = (
-                self._weights[0] * actions
-                + self._weights[1] * self._prev_model_output
-                + self._weights[2] * self._prev_prev_model_output
-            )
+        a = self._alpha
+        y = a * actions + (1.0 - a) * self._filtered_1
+        self._filtered_1[:] = y
         if self._order >= 2:
-            self._prev_prev_model_output[:] = self._prev_model_output.clone()
-        self._prev_model_output[:] = actions.clone()
-        super().process_actions(filtered)
+            y = a * y + (1.0 - a) * self._filtered_2
+            self._filtered_2[:] = y
+        super().process_actions(y)
 
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
-        self._prev_model_output[env_ids] = 0.0
-        if self._prev_prev_model_output is not None:
-            self._prev_prev_model_output[env_ids] = 0.0
+        self._filtered_1[env_ids] = 0.0
+        if self._filtered_2 is not None:
+            self._filtered_2[env_ids] = 0.0
         super().reset(env_ids)
 
 
