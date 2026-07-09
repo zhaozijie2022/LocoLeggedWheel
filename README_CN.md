@@ -1,4 +1,4 @@
- # LocoLeggedWheel: 轮腿机器人强化学习运动控制
+ # LocoWheeledLegged: 轮腿机器人强化学习运动控制
 
 基于 NVIDIA Isaac Lab 的 **Go2W 轮腿机器人 locomotion 强化学习项目**，该项目的IsaacGym 版本，请参考[DreamWaQ_Go2W](https://github.com/ShengqianChen/DreamWaQ_Go2W)。
 本项目主要在针对轮腿机器人结构，对 **奖励函数** 与 **训练稳定性** 进行了优化，，并提供了在宇树 Unitree Go2W 上 **sim2real 部署** 的接口与配置。
@@ -51,13 +51,13 @@
 + 训练与测试
   ```bash
   # 训练
-  python locoleggedwheel/scripts/train.py \
+  python locowheeledlegged/scripts/train.py \
     --task Isaac-LocomotionGo2W-v1 \
     --num_envs=4096 \
     --headless
 
   # 测试
-  python locoleggedwheel/scripts/play.py \
+  python locowheeledlegged/scripts/play.py \
     --task Isaac-LocomotionGo2W-Play-v1 \
     --num_envs=20 \
     --load_run=xxxx \

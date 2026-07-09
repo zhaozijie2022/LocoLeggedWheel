@@ -60,14 +60,14 @@ from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
 
-# 将项目根目录加入 sys.path，以便从 scripts/ 运行时能 import locoleggedwheel
+# 将项目根目录加入 sys.path，以便从 scripts/ 运行时能 import locowheeledlegged
 from pathlib import Path
 _project_root = Path(__file__).resolve().parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 # Import extensions to set up environment tasks
-from locoleggedwheel import *  # noqa: F401
+from locowheeledlegged import *  # noqa: F401
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True

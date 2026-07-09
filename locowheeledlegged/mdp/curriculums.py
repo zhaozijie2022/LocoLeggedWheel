@@ -7,7 +7,7 @@ if TYPE_CHECKING:
 from isaaclab.managers import ManagerTermBase, CurriculumTermCfg
 import numpy as np
 import math
-import locoleggedwheel.mdp as mdp
+import locowheeledlegged.mdp as mdp
 
 
 from isaaclab.assets import Articulation

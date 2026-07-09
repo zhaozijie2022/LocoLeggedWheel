@@ -47,7 +47,7 @@ from isaaclab_rl.rsl_rl import (
 )
 
 # Import extensions to set up environment tasks
-from locoleggedwheel import *  # noqa: F401
+from locowheeledlegged import *  # noqa: F401
 
 
 def main():

@@ -1,7 +1,7 @@
-# LocoLeggedWheel: Legged-Wheeled Robot Reinforcement Learning Locomotion Control
+# LocoWheeledLegged: Wheeled-Legged Robot Reinforcement Learning Locomotion Control
 
-**Legged-Wheeled Robot locomotion reinforcement learning project** based on NVIDIA Isaac Lab. If you are looking for the IsaacGym version, please refer to [DreamWaQ_Go2W](https://github.com/ShengqianChen/DreamWaQ_Go2W).
-This project mainly optimizes **reward functions** and **training stability** for legged-wheeled robots, and provides sim2real deployment interfaces and configurations for the Unitree Go2W robot.
+**Wheeled-Legged Robot locomotion reinforcement learning project** based on NVIDIA Isaac Lab. If you are looking for the IsaacGym version, please refer to [DreamWaQ_Go2W](https://github.com/ShengqianChen/DreamWaQ_Go2W).
+This project mainly optimizes **reward functions** and **training stability** for wheeled-legged robots, and provides sim2real deployment interfaces and configurations for the Unitree Go2W robot.
 
 <div align="center">
   <p align="right">
@@ -48,13 +48,13 @@ This project mainly optimizes **reward functions** and **training stability** fo
 + Training and testing
   ```bash
   # Training
-  python locoleggedwheel/scripts/train.py \
+  python locowheeledlegged/scripts/train.py \
     --task Isaac-LocomotionGo2W-v1 \
     --num_envs=4096 \
     --headless
 
   # Testing
-  python locoleggedwheel/scripts/play.py \
+  python locowheeledlegged/scripts/play.py \
     --task Isaac-LocomotionGo2W-Play-v1 \
     --num_envs=20 \
     --load_run=xxxx \

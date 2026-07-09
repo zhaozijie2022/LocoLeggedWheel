@@ -28,10 +28,10 @@ class LocomotionPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         desired_kl=0.01,
         max_grad_norm=1.0,
     )
-    experiment_name = "locoleggedwheel_go2w"
+    experiment_name = "locowheeledlegged_go2w"
     logger = "wandb"
     # logger = "tensorboard"
-    wandb_project = "LocoLeggedWheel"
+    wandb_project = "LocoWheeledLegged"
 
 
 

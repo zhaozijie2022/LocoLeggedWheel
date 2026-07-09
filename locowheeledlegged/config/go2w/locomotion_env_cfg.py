@@ -17,14 +17,14 @@ from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, patterns
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
-import locoleggedwheel.mdp as mdp
+import locowheeledlegged.mdp as mdp
 import isaaclab.envs.mdp.rewards as isaaclab_rewards
-import locoleggedwheel.mdp.rewards as custom_rewards
-from locoleggedwheel.assets.go2w import Go2W_CFG as Robot_CFG
+import locowheeledlegged.mdp.rewards as custom_rewards
+from locowheeledlegged.assets.go2w import Go2W_CFG as Robot_CFG
 import isaaclab.terrains as terrain_gen
 from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg
 from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
-import locoleggedwheel.terrains as custom_terrain_gen
+import locowheeledlegged.terrains as custom_terrain_gen
 
 
 
@@ -335,7 +335,7 @@ class RewardsCfg:
                 "threshold": 7.0,
             }
         )
-    # locoleggedwheel/mdp/rewards.py
+    # locowheeledlegged/mdp/rewards.py
     stand_still_without_cmd = RewardTermCfg(
         func=custom_rewards.stand_still_without_cmd,
         weight=-0.25,
